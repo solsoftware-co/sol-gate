@@ -9,7 +9,7 @@ port = 8790
 
 [vars]
 ENVIRONMENT = "development"
-# SOL_API_KEY, SOL_INTEGRATE_API_KEY, SOL_NOTIFY_API_KEY, TURNSTILE_SECRET_KEY
+# API_KEY (inbound), SOL_API_KEY, SOL_INTEGRATE_API_KEY, SOL_NOTIFY_API_KEY
 # are Cloudflare Secrets — not set here
 
 # sol-api, sol-integrate and sol-notify are reached only through service
@@ -32,15 +32,10 @@ binding = "SOL_NOTIFY"
 service = "sol-notify"
 
 # Cloudflare rate limiting (per Cloudflare location, eventually consistent —
-# a cap on abuse, not an exact quota). period must be 10 or 60 seconds.
-# namespace_id is unique per account, so every environment gets its own
-# counters.
-[[unsafe.bindings]]
-name = "IP_RATE_LIMITER"
-type = "ratelimit"
-namespace_id = "38001"
-simple = { limit = 10, period = 60 }
-
+# a cap on abuse, not an exact quota), per form. No per-IP limit: callers
+# are servers, so the IP is the caller's server, not the visitor.
+# period must be 10 or 60 seconds. namespace_id is unique per account, so
+# every environment gets its own counters.
 [[unsafe.bindings]]
 name = "FORM_RATE_LIMITER"
 type = "ratelimit"
@@ -76,12 +71,6 @@ binding = "SOL_NOTIFY"
 service = "sol-notify-staging"
 
 [[env.staging.unsafe.bindings]]
-name = "IP_RATE_LIMITER"
-type = "ratelimit"
-namespace_id = "38011"
-simple = { limit = 10, period = 60 }
-
-[[env.staging.unsafe.bindings]]
 name = "FORM_RATE_LIMITER"
 type = "ratelimit"
 namespace_id = "38012"
@@ -95,8 +84,8 @@ class_name = "SubmissionWorkflow"
 [env.staging.observability]
 enabled = true
 
-# Public on workers.dev to start; a custom domain (e.g. gate.solsoftware.co)
-# is a routes change later.
+# Reachable on workers.dev (API-key protected); a custom domain (e.g.
+# gate.solsoftware.co) is a routes change later.
 [env.production]
 name = "sol-gate"
 workers_dev = true
@@ -115,12 +104,6 @@ service = "sol-integrate"
 [[env.production.services]]
 binding = "SOL_NOTIFY"
 service = "sol-notify"
-
-[[env.production.unsafe.bindings]]
-name = "IP_RATE_LIMITER"
-type = "ratelimit"
-namespace_id = "38021"
-simple = { limit = 10, period = 60 }
 
 [[env.production.unsafe.bindings]]
 name = "FORM_RATE_LIMITER"

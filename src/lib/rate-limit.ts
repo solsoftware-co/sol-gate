@@ -1,16 +1,13 @@
 import type { Env } from "../types/index.js";
 
-// Per client IP (across every form) and per form (across every IP). Both
-// are Cloudflare rate-limiting bindings — see wrangler.toml for the limits.
+// Per form, across every caller — a Cloudflare rate-limiting binding (see
+// wrangler.toml for the limit). There's no per-IP limit: callers are
+// servers, so Sol Gate only sees the calling server's IP, not the visitor's.
 export async function isRateLimited(
-  env: Pick<Env, "IP_RATE_LIMITER" | "FORM_RATE_LIMITER">,
-  ip: string,
+  env: Pick<Env, "FORM_RATE_LIMITER">,
   clientId: string,
   formId: string
 ): Promise<boolean> {
-  const [byIp, byForm] = await Promise.all([
-    env.IP_RATE_LIMITER.limit({ key: ip }),
-    env.FORM_RATE_LIMITER.limit({ key: `${clientId}:${formId}` }),
-  ]);
-  return !byIp.success || !byForm.success;
+  const { success } = await env.FORM_RATE_LIMITER.limit({ key: `${clientId}:${formId}` });
+  return !success;
 }

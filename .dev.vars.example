@@ -1,7 +1,5 @@
+API_KEY=dev-local-key
 ENVIRONMENT=development
 SOL_API_KEY=dev-local-key
 SOL_INTEGRATE_API_KEY=dev-local-key
 SOL_NOTIFY_API_KEY=dev-local-key
-# Cloudflare's Turnstile test secret: every token passes. Use
-# 2x0000000000000000000000000000000AA to make every token fail.
-TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA

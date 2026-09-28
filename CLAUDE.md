@@ -8,7 +8,7 @@ First build (SOL-38): https://linear.app/sol-software/issue/SOL-38. Design: `sol
 
 ## Role
 
-**The public front door** for client websites, and the only code in the stack that handles untrusted input. Every public request is a form submission. The website supplies **only content** (`fields`); which integrations run, who is notified and what the notification says all come from the form's configuration in sol-api. Behind it, **sol-integrate** (Mailchimp; Sheets is SOL-10) and **sol-notify** (email; Slack is SOL-13) are internal-only and trust what Sol Gate sends them.
+**The front door** for client websites, and the only code in the stack that handles untrusted input. Every request is a form submission, sent **server-to-server** with an API key: a client's Next.js site posts its form to its own server (Server Action / Route Handler), which calls Sol Gate. Browsers never call Sol Gate directly — a key in browser code would be public. The caller supplies **only content** (`fields`); which integrations run, who is notified and what the notification says all come from the form's configuration in sol-api. Behind it, **sol-integrate** (Mailchimp; Sheets is SOL-10) and **sol-notify** (email; Slack is SOL-13) are internal-only and trust what Sol Gate sends them.
 
 ## Commands
 
@@ -23,8 +23,8 @@ npm run deploy     # deploy to Cloudflare Workers
 
 ```
 POST /v1/clients/:clientId/forms/:formId/submissions
-Origin: https://acme.com
-{ "fields": { "firstName": "Jane", "email": "jane@example.com", … }, "turnstileToken": "…" }
+X-API-Key: <API_KEY>
+{ "fields": { "firstName": "Jane", "email": "jane@example.com", … } }
 
 → 202 { "success": true, "data": { "submissionId": "<uuid>" } }
 ```
@@ -33,14 +33,13 @@ Checked in this order:
 
 | Step | Failure |
 |---|---|
-| Rate limit: per client IP (10/min) and per form (60/min), Cloudflare rate-limiting bindings | `429` + `Retry-After: 60` |
+| `X-API-Key` matches `API_KEY` (constant-time; `middleware/auth.ts`, every `/v1/*` route) | `401` |
+| Rate limit: per form (60/min), Cloudflare rate-limiting binding | `429` + `Retry-After: 60` |
 | Load the form: `GET /v1/clients/:clientId/forms/:formId` (sol-api, client-scoped) | `404` unknown form / wrong client · `503` sol-api unreachable |
-| `Origin` in `forms.allowed_origins` (exact origins, normalized; no wildcards) | `403`, **no CORS headers** |
-| Body ≤ 64 KB, JSON, `{ fields: object, turnstileToken: string }` | `413` · `422` |
-| Turnstile siteverify (fails closed) | `403` · `503` if Turnstile is down |
+| Body ≤ 64 KB, JSON, `{ fields: object }` | `413` · `422` |
 | `fields` against `forms.payload_schema` (JSON Schema 2020-12, `@cfworker/json-schema` — Ajv can't run on Workers) | `422` with `details: [{ path, message }]` |
 
-From the Origin check on, every response carries `Access-Control-Allow-Origin: <origin>` + `Vary: Origin`, so the browser can read a 422's details. `OPTIONS` on the same path runs the same rate limit / form / Origin checks and answers the preflight (`204`, `POST, OPTIONS`, `Content-Type`, max-age 600). Anything else in the body (recipients, templates…) is ignored — Sol Gate *builds* each internal request from configuration, it never forwards the caller's.
+**No Turnstile, Origin check, CORS or per-IP limit** (decided 2026-09-28, see `sol-brain/sol-gate/decisions/decision-api-key-not-turnstile`): callers are servers, so there's no browser to run Turnstile, a server's `Origin` header proves nothing, and the only IP Sol Gate sees is the calling server's. `forms.allowed_origins` is currently unused. Bot protection for a public web form is the calling site's job (e.g. a honeypot or rate limit in the Next.js route). Anything else in the body (recipients, templates…) is ignored — Sol Gate *builds* each internal request from configuration, it never forwards the caller's.
 
 ## After the 202: a Cloudflare Workflow per submission
 
@@ -76,9 +75,9 @@ No `preview` env yet — per-PR previews + e2e are a follow-up (sol-integrate's 
 
 Staging deploys from `.github/workflows/release.yml` on every merge to `main`; production is the same workflow's `deploy-production` job, gated behind the `production` GitHub Environment.
 
-**GitHub secrets:** `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `RELEASE_TOKEN`, and per env (`_STAGING` / `_PRODUCTION`): `SOL_API_KEY_*` (sol-api's key), `SOL_INTEGRATE_API_KEY_*` (= sol-integrate's `API_KEY_*`), `SOL_NOTIFY_API_KEY_*` (= sol-notify's `API_KEY_*`), `TURNSTILE_SECRET_KEY_*` (the Turnstile widget's secret; the site key goes in the client website). There is no inbound API key — the endpoint is public.
+**GitHub secrets:** `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `RELEASE_TOKEN`, and per env (`_STAGING` / `_PRODUCTION`): `API_KEY_*` (Sol Gate's own inbound key — callers send it), `SOL_API_KEY_*` (sol-api's key), `SOL_INTEGRATE_API_KEY_*` (= sol-integrate's `API_KEY_*`), `SOL_NOTIFY_API_KEY_*` (= sol-notify's `API_KEY_*`). One inbound key per environment for now; per-form keys (a hash on the `forms` row) are a later change.
 
-Local secrets go in `.dev.vars` (gitignored, see `.dev.vars.example`). It uses Cloudflare's Turnstile test secret `1x0000000000000000000000000000000AA` (every token passes; `2x…AA` makes every token fail), so there's no Turnstile bypass in code.
+Local secrets go in `.dev.vars` (gitignored, see `.dev.vars.example`).
 
 ## Architecture
 
@@ -89,7 +88,7 @@ src/
 ├── index.ts                       # Hono app; validates ENVIRONMENT; exports SubmissionWorkflow
 ├── routes/
 │   ├── health.ts                  # GET /health
-│   └── submissions.ts             # POST + OPTIONS /v1/clients/:clientId/forms/:formId/submissions — the request flow only
+│   └── submissions.ts             # POST /v1/clients/:clientId/forms/:formId/submissions — the request flow only
 ├── validators/submission.ts       # body schema + parseSubmissionBody() (size 413, JSON / shape 422)
 ├── workflows/submission.ts        # WorkflowEntrypoint → processSubmission()
 ├── services/
@@ -99,11 +98,13 @@ src/
 ├── lib/
 │   ├── service-fetch.ts           # binding fetch: timeout, text-first parse, ServiceError.permanent
 │   ├── sol-api.ts / sol-integrate.ts / sol-notify.ts   # typed clients
-│   ├── form-lookup.ts             # lookUpForm(): rate limit → load form → Origin check → CORS headers (preflight + POST)
-│   ├── rate-limit.ts              # isRateLimited(): per-IP and per-form bindings
+│   ├── form-lookup.ts             # lookUpForm(): rate limit → load form
+│   ├── rate-limit.ts              # isRateLimited(): per-form binding
 │   ├── payload-schema.ts          # JSON Schema validation, displayValue()
-│   ├── turnstile.ts, origin.ts, environment.ts, logger.ts, responses.ts
-├── middleware/error.ts            # global error envelope
+│   ├── environment.ts, logger.ts, responses.ts
+├── middleware/
+│   ├── auth.ts                    # X-API-Key, constant-time
+│   └── error.ts                   # global error envelope
 └── types/index.ts                 # Env bindings, AppEnv, ErrorCode
 tests/unit/                        # Workers pool; fixtures/form-01.ts is the Form 01 scenario
 ```

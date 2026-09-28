@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { errorHandler } from "./middleware/error.js";
+import { requireApiKey } from "./middleware/auth.js";
 import health from "./routes/health.js";
 import submissions from "./routes/submissions.js";
 import { parseEnvironment } from "./lib/environment.js";
@@ -20,9 +21,10 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-// Public: no API key. Abuse protection is per form — rate limits, Origin
-// against allowed_origins, Turnstile (routes/submissions.ts).
+// Everything but /health needs the API key: callers are servers (e.g. a
+// client's Next.js server), never browsers.
 app.route("/health", health);
+app.use("/v1/*", requireApiKey);
 app.route("/v1/clients", submissions);
 
 export default app;

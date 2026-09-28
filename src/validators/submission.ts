@@ -3,12 +3,11 @@ import { z } from "zod";
 import { errorResponse, validationErrorResponse } from "../lib/responses.js";
 import { ErrorCode, type AppEnv } from "../types/index.js";
 
-// The public submission body. Only `fields` (content) and the Turnstile
-// token are read; anything else a caller sends (recipients, templates…) is
-// dropped. `fields` is checked against the form's payload_schema separately.
+// The submission body. Only `fields` (content) is read; anything else a
+// caller sends (recipients, templates…) is dropped. `fields` is checked
+// against the form's payload_schema separately.
 export const submissionBodySchema = z.object({
   fields: z.record(z.string(), z.unknown()),
-  turnstileToken: z.string().min(1).max(2048),
 });
 
 export type SubmissionBody = z.infer<typeof submissionBodySchema>;

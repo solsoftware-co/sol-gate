@@ -9,9 +9,9 @@ export interface Env {
   SOL_INTEGRATE_API_KEY: string;
   SOL_NOTIFY: Fetcher;
   SOL_NOTIFY_API_KEY: string;
-  TURNSTILE_SECRET_KEY: string;
-  /** Rate-limiting bindings: per client IP, and per form across all IPs. */
-  IP_RATE_LIMITER: RateLimit;
+  /** Inbound key every caller sends as X-API-Key — one per environment for now. */
+  API_KEY: string;
+  /** Rate-limiting binding, per form. */
   FORM_RATE_LIMITER: RateLimit;
   /** One instance per accepted submission (instance id = submissionId). */
   SUBMISSION_WORKFLOW: Workflow<SubmissionParams>;
@@ -25,7 +25,7 @@ export type AppEnv = {
 };
 
 export enum ErrorCode {
-  FORBIDDEN = "FORBIDDEN",
+  UNAUTHORIZED = "UNAUTHORIZED",
   NOT_FOUND = "NOT_FOUND",
   PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE",
   VALIDATION_ERROR = "VALIDATION_ERROR",

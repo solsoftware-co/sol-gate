@@ -19,7 +19,3 @@ export function notFoundResponse(c: Context<AppEnv>, message: string) {
 export function validationErrorResponse(c: Context<AppEnv>, message: string, details: unknown = null) {
   return errorResponse(c, 422, ErrorCode.VALIDATION_ERROR, message, details);
 }
-
-export function forbiddenResponse(c: Context<AppEnv>, message: string) {
-  return errorResponse(c, 403, ErrorCode.FORBIDDEN, message);
-}

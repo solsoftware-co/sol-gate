@@ -1,21 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import app from "../../../src/index.js";
 import { CLIENT_ID, FORM_ID, form01, submission } from "../fixtures/form-01.js";
 
-const verifyMock = vi.fn();
-vi.mock("../../../src/lib/turnstile.js", async () => {
-  const actual = await vi.importActual<typeof import("../../../src/lib/turnstile.js")>("../../../src/lib/turnstile.js");
-  return { ...actual, verifyTurnstile: (...args: unknown[]) => verifyMock(...args) };
-});
-
-const { default: app } = await import("../../../src/index.js");
-const { TurnstileUnavailableError } = await import("../../../src/lib/turnstile.js");
-
 const PATH = `/v1/clients/${CLIENT_ID}/forms/${FORM_ID}/submissions`;
-const ORIGIN = "https://acme.com";
+const API_KEY = "gate-key";
 
 let solApiResponse: () => Response;
 let solApiPaths: string[];
-let ipAllowed: boolean;
 let formAllowed: boolean;
 let rateLimitKeys: string[];
 let workflowCreate: ReturnType<typeof vi.fn>;
@@ -34,8 +25,7 @@ function env(overrides: Record<string, unknown> = {}) {
     SOL_INTEGRATE_API_KEY: "integrate-key",
     SOL_NOTIFY: {} as Fetcher,
     SOL_NOTIFY_API_KEY: "notify-key",
-    TURNSTILE_SECRET_KEY: "turnstile-secret",
-    IP_RATE_LIMITER: { limit: async ({ key }: { key: string }) => (rateLimitKeys.push(`ip:${key}`), { success: ipAllowed }) },
+    API_KEY,
     FORM_RATE_LIMITER: { limit: async ({ key }: { key: string }) => (rateLimitKeys.push(`form:${key}`), { success: formAllowed }) },
     SUBMISSION_WORKFLOW: { create: workflowCreate },
     ...overrides,
@@ -49,10 +39,8 @@ async function send(
     opts.path ?? PATH,
     {
       method: opts.method ?? "POST",
-      headers: { "Content-Type": "application/json", Origin: ORIGIN, "CF-Connecting-IP": "203.0.113.7", ...opts.headers },
-      ...(opts.method !== "OPTIONS" && {
-        body: opts.rawBody ?? JSON.stringify(opts.body ?? { fields: submission, turnstileToken: "token-1" }),
-      }),
+      headers: { "Content-Type": "application/json", "X-API-Key": API_KEY, ...opts.headers },
+      body: opts.rawBody ?? JSON.stringify(opts.body ?? { fields: submission }),
     },
     env(opts.env)
   );
@@ -62,11 +50,9 @@ async function send(
 beforeEach(() => {
   solApiResponse = () => Response.json({ success: true, data: form01 });
   solApiPaths = [];
-  ipAllowed = true;
   formAllowed = true;
   rateLimitKeys = [];
   workflowCreate = vi.fn().mockResolvedValue({ id: "instance" });
-  verifyMock.mockReset().mockResolvedValue({ success: true, errorCodes: [] });
 });
 
 describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
@@ -94,27 +80,30 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
     expect(solApiPaths).toEqual([`/v1/clients/${CLIENT_ID}/forms/${FORM_ID}`]);
   });
 
-  it("returns CORS headers for the allowed origin", async () => {
-    const { res } = await send();
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ORIGIN);
-    expect(res.headers.get("Vary")).toBe("Origin");
-  });
-
-  it("verifies the Turnstile token with the secret and the client IP", async () => {
-    await send();
-    expect(verifyMock).toHaveBeenCalledWith("turnstile-secret", "token-1", { remoteIp: "203.0.113.7" });
-  });
-
-  it("rate limits per IP and per form", async () => {
-    await send();
-    expect(rateLimitKeys.sort()).toEqual([`form:${CLIENT_ID}:${FORM_ID}`, "ip:203.0.113.7"]);
-  });
-
   it.each([
-    ["IP", () => (ipAllowed = false)],
-    ["form", () => (formAllowed = false)],
-  ])("429s when the %s rate limit is hit, before loading the form", async (_label, setUp) => {
-    setUp();
+    ["no API key", {}],
+    ["a wrong API key", { "X-API-Key": "nope" }],
+  ])("401s %s, before rate limiting or loading the form", async (_label, headers) => {
+    const { res, json } = await send({ headers: { "X-API-Key": "", ...headers } });
+
+    expect(res.status).toBe(401);
+    expect(json.error.code).toBe("UNAUTHORIZED");
+    expect(rateLimitKeys).toHaveLength(0);
+    expect(solApiPaths).toHaveLength(0);
+  });
+
+  it("ignores the Origin header (callers are servers; there's no Origin check)", async () => {
+    const { res } = await send({ headers: { Origin: "https://anything.example" } });
+    expect(res.status).toBe(202);
+  });
+
+  it("rate limits per form", async () => {
+    await send();
+    expect(rateLimitKeys).toEqual([`form:${CLIENT_ID}:${FORM_ID}`]);
+  });
+
+  it("429s when the form's rate limit is hit, before loading the form", async () => {
+    formAllowed = false;
     const { res, json } = await send();
 
     expect(res.status).toBe(429);
@@ -141,42 +130,12 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
     expect(JSON.stringify(json)).not.toContain("1042");
   });
 
-  it.each([
-    ["a disallowed origin", { Origin: "https://evil.example" }],
-    ["no origin", { Origin: "" }],
-  ])("403s %s, without CORS headers or a Turnstile check", async (_label, headers) => {
-    const { res, json } = await send({ headers });
-
-    expect(res.status).toBe(403);
-    expect(json.error.code).toBe("FORBIDDEN");
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
-    expect(verifyMock).not.toHaveBeenCalled();
-  });
-
-  it("403s a failed Turnstile check", async () => {
-    verifyMock.mockResolvedValue({ success: false, errorCodes: ["invalid-input-response"] });
-    const { res, json } = await send();
-
-    expect(res.status).toBe(403);
-    expect(json.error.message).toBe("Turnstile verification failed");
-    expect(workflowCreate).not.toHaveBeenCalled();
-  });
-
-  it("503s when Turnstile itself is unavailable (fails closed)", async () => {
-    verifyMock.mockRejectedValue(new TurnstileUnavailableError("timeout"));
-    const { res } = await send();
-
-    expect(res.status).toBe(503);
-    expect(workflowCreate).not.toHaveBeenCalled();
-  });
-
-  it("422s fields that don't match the form's payload_schema, with details and CORS headers", async () => {
+  it("422s fields that don't match the form's payload_schema, with details", async () => {
     const { res, json } = await send({
-      body: { fields: { firstName: "Jane", email: "not-an-email" }, turnstileToken: "token-1" },
+      body: { fields: { firstName: "Jane", email: "not-an-email" } },
     });
 
     expect(res.status).toBe(422);
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ORIGIN);
     expect(json.error.details).toEqual(
       expect.arrayContaining([
         { path: "", message: 'Instance does not have required property "lastName".' },
@@ -188,18 +147,18 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
 
   it.each([
     ["non-JSON", "not json"],
-    ["a missing turnstileToken", JSON.stringify({ fields: submission })],
-    ["fields that aren't an object", JSON.stringify({ fields: ["a"], turnstileToken: "t" })],
-  ])("422s %s before checking Turnstile", async (_label, rawBody) => {
+    ["missing fields", JSON.stringify({})],
+    ["fields that aren't an object", JSON.stringify({ fields: ["a"] })],
+  ])("422s %s", async (_label, rawBody) => {
     const { res } = await send({ rawBody });
 
     expect(res.status).toBe(422);
-    expect(verifyMock).not.toHaveBeenCalled();
+    expect(workflowCreate).not.toHaveBeenCalled();
   });
 
   it("413s an oversized body", async () => {
     const { res, json } = await send({
-      body: { fields: { comment: "x".repeat(70 * 1024) }, turnstileToken: "token-1" },
+      body: { fields: { comment: "x".repeat(70 * 1024) } },
     });
 
     expect(res.status).toBe(413);
@@ -210,7 +169,6 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
     await send({
       body: {
         fields: submission,
-        turnstileToken: "token-1",
         recipients: ["attacker@evil.example"],
         channels: [],
         integrations: [],
@@ -222,13 +180,12 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
     expect(params.form.channels).toEqual(form01.channels);
   });
 
-  it("500s with the error envelope (and CORS headers) when the workflow can't be started", async () => {
+  it("500s with the error envelope when the workflow can't be started", async () => {
     workflowCreate.mockRejectedValue(new Error("workflow binding broken"));
     const { res, json } = await send();
 
     expect(res.status).toBe(500);
     expect(json.error.code).toBe("INTERNAL_ERROR");
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ORIGIN);
   });
 
   it("500s every request on an invalid ENVIRONMENT", async () => {
@@ -238,26 +195,8 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
   });
 });
 
-describe("OPTIONS preflight", () => {
-  it("204s with CORS headers for an allowed origin", async () => {
-    const { res } = await send({ method: "OPTIONS" });
-
-    expect(res.status).toBe(204);
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ORIGIN);
-    expect(res.headers.get("Access-Control-Allow-Methods")).toBe("POST, OPTIONS");
-    expect(res.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type");
-  });
-
-  it("403s a disallowed origin", async () => {
-    const { res } = await send({ method: "OPTIONS", headers: { Origin: "https://evil.example" } });
-
-    expect(res.status).toBe(403);
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
-  });
-});
-
 describe("other routes", () => {
-  it("GET /health needs nothing", async () => {
+  it("GET /health needs no API key", async () => {
     const res = await app.request("/health", {}, env());
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ success: true, data: { status: "ok", environment: "staging" } });

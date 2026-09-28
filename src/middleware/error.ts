@@ -28,8 +28,8 @@ export function errorHandler(err: Error, c: Context<AppEnv>): Response {
 
 function statusToErrorCode(status: number): ErrorCode {
   switch (status) {
-    case 403:
-      return ErrorCode.FORBIDDEN;
+    case 401:
+      return ErrorCode.UNAUTHORIZED;
     case 404:
       return ErrorCode.NOT_FOUND;
     case 413:
