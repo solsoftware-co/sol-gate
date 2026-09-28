@@ -51,7 +51,7 @@ export function buildNotification(input: NotificationInput): BuiltNotification {
   if (resolved.emailAddresses.length === 0) return { ok: false, reason: "Email group has no addresses" };
 
   const integrations = reportedIntegrations(input.integrations, channel.integrationIds, input.results);
-  const cta = replyCta(input.fields, input.payloadSchema);
+  const cta = buildCta(input.fields, input.payloadSchema);
 
   return {
     ok: true,
@@ -102,7 +102,7 @@ const EMAIL_FIELD_NAME = /^e-?mail(_?address)?$/i;
 // "Reply to {name}" when the form has an email field: the first property
 // the payload schema declares as `format: "email"`, else a field named like
 // "email". Only a plausible address becomes a mailto: link.
-export function replyCta(
+export function buildCta(
   fields: Record<string, unknown>,
   payloadSchema: Record<string, unknown>
 ): { url: string; label: string } | undefined {

@@ -136,7 +136,7 @@ export async function processSubmission(env: ProcessEnv, params: SubmissionParam
   summary.notifications = await Promise.all(
     form.channels.map(async (channel) => {
       const { channelId } = channel;
-      const built = buildNotification({
+      const builtNotification = buildNotification({
         clientId,
         formName: form.name,
         payloadSchema: form.payloadSchema,
@@ -147,15 +147,15 @@ export async function processSubmission(env: ProcessEnv, params: SubmissionParam
         channel,
         resolved: byId.get(channelId),
       });
-      if (!built.ok) {
-        logger.warn("notification skipped", { ...log, channelId, reason: built.reason });
-        return { channelId, status: "skipped" as const, detail: built.reason };
+      if (!builtNotification.ok) {
+        logger.warn("notification skipped", { ...log, channelId, reason: builtNotification.reason });
+        return { channelId, status: "skipped" as const, detail: builtNotification.reason };
       }
 
       try {
         return await step.do(`notify ${channelId}`, NOTIFY_STEP, async () => {
           try {
-            await sendNotification(env, built.request);
+            await sendNotification(env, builtNotification.request);
             return { channelId, status: "sent" as const };
           } catch (err) {
             // e.g. a 422 for a template or channel type sol-notify doesn't

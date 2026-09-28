@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildNotification, includedFields, replyCta, type NotificationInput } from "../../../src/services/notifications.js";
+import { buildNotification, includedFields, buildCta, type NotificationInput } from "../../../src/services/notifications.js";
 import { GROUP_01_ID, LEADS_SLACK_ID, form01, submission } from "../fixtures/form-01.js";
 
 describe("includedFields", () => {
@@ -22,18 +22,18 @@ describe("includedFields", () => {
 
 describe("replyCta", () => {
   it("uses the schema's format: email field and the submitter's first name", () => {
-    expect(replyCta(submission, form01.payloadSchema)).toEqual({ url: "mailto:jane@example.com", label: "Reply to Jane" });
+    expect(buildCta(submission, form01.payloadSchema)).toEqual({ url: "mailto:jane@example.com", label: "Reply to Jane" });
   });
 
   it("prefers a full name field", () => {
-    expect(replyCta({ name: "Jane Doe", email: "jane@example.com" }, {})).toEqual({
+    expect(buildCta({ name: "Jane Doe", email: "jane@example.com" }, {})).toEqual({
       url: "mailto:jane@example.com",
       label: "Reply to Jane Doe",
     });
   });
 
   it("falls back to a field named like email, and a plain label without a name", () => {
-    expect(replyCta({ Email: "jane@example.com" }, {})).toEqual({ url: "mailto:jane@example.com", label: "Reply" });
+    expect(buildCta({ Email: "jane@example.com" }, {})).toEqual({ url: "mailto:jane@example.com", label: "Reply" });
   });
 
   it.each([
@@ -41,7 +41,7 @@ describe("replyCta", () => {
     ["an implausible address", { email: "jane@example.com?bcc=everyone@example.com" }],
     ["an empty address", { email: " " }],
   ])("is omitted for %s", (_label, fields) => {
-    expect(replyCta(fields, {})).toBeUndefined();
+    expect(buildCta(fields, {})).toBeUndefined();
   });
 });
 
