@@ -89,7 +89,8 @@ src/
 ├── index.ts                       # Hono app; validates ENVIRONMENT; exports SubmissionWorkflow
 ├── routes/
 │   ├── health.ts                  # GET /health
-│   └── submissions.ts             # POST + OPTIONS /v1/clients/:clientId/forms/:formId/submissions
+│   └── submissions.ts             # POST + OPTIONS /v1/clients/:clientId/forms/:formId/submissions — the request flow only
+├── validators/submission.ts       # body schema + parseSubmissionBody() (size 413, JSON / shape 422)
 ├── workflows/submission.ts        # WorkflowEntrypoint → processSubmission()
 ├── services/
 │   ├── process-submission.ts      # integrations → resolve channels → notifications, as durable steps
@@ -98,6 +99,8 @@ src/
 ├── lib/
 │   ├── service-fetch.ts           # binding fetch: timeout, text-first parse, ServiceError.permanent
 │   ├── sol-api.ts / sol-integrate.ts / sol-notify.ts   # typed clients
+│   ├── form-lookup.ts             # lookUpForm(): rate limit → load form → Origin check → CORS headers (preflight + POST)
+│   ├── rate-limit.ts              # isRateLimited(): per-IP and per-form bindings
 │   ├── payload-schema.ts          # JSON Schema validation, displayValue()
 │   ├── turnstile.ts, origin.ts, environment.ts, logger.ts, responses.ts
 ├── middleware/error.ts            # global error envelope
