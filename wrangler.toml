@@ -1,0 +1,137 @@
+name = "sol-gate"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[dev]
+ip = "0.0.0.0"
+port = 8790
+
+[vars]
+ENVIRONMENT = "development"
+# SOL_API_KEY, SOL_INTEGRATE_API_KEY, SOL_NOTIFY_API_KEY, TURNSTILE_SECRET_KEY
+# are Cloudflare Secrets — not set here
+
+# sol-api, sol-integrate and sol-notify are reached only through service
+# bindings, never URLs — a plain fetch() to another Worker on the same
+# workers.dev subdomain fails with "error code: 1042", and sol-integrate /
+# sol-notify have no public URL in staging and production anyway. Bindings,
+# rate limiters and workflows aren't inherited, so each environment declares
+# its own. Locally, `wrangler dev` connects each binding to that Worker's own
+# `wrangler dev` session when it's running.
+[[services]]
+binding = "SOL_API"
+service = "sol-api"
+
+[[services]]
+binding = "SOL_INTEGRATE"
+service = "sol-integrate"
+
+[[services]]
+binding = "SOL_NOTIFY"
+service = "sol-notify"
+
+# Cloudflare rate limiting (per Cloudflare location, eventually consistent —
+# a cap on abuse, not an exact quota). period must be 10 or 60 seconds.
+# namespace_id is unique per account, so every environment gets its own
+# counters.
+[[unsafe.bindings]]
+name = "IP_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "38001"
+simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "FORM_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "38002"
+simple = { limit = 60, period = 60 }
+
+# One instance per accepted submission — everything after the 202.
+[[workflows]]
+name = "sol-gate-submission-dev"
+binding = "SUBMISSION_WORKFLOW"
+class_name = "SubmissionWorkflow"
+
+[observability]
+enabled = true
+
+[env.staging]
+name = "sol-gate-staging"
+workers_dev = true
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
+[[env.staging.services]]
+binding = "SOL_API"
+service = "sol-api-staging"
+
+[[env.staging.services]]
+binding = "SOL_INTEGRATE"
+service = "sol-integrate-staging"
+
+[[env.staging.services]]
+binding = "SOL_NOTIFY"
+service = "sol-notify-staging"
+
+[[env.staging.unsafe.bindings]]
+name = "IP_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "38011"
+simple = { limit = 10, period = 60 }
+
+[[env.staging.unsafe.bindings]]
+name = "FORM_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "38012"
+simple = { limit = 60, period = 60 }
+
+[[env.staging.workflows]]
+name = "sol-gate-submission-staging"
+binding = "SUBMISSION_WORKFLOW"
+class_name = "SubmissionWorkflow"
+
+[env.staging.observability]
+enabled = true
+
+# Public on workers.dev to start; a custom domain (e.g. gate.solsoftware.co)
+# is a routes change later.
+[env.production]
+name = "sol-gate"
+workers_dev = true
+
+[env.production.vars]
+ENVIRONMENT = "production"
+
+[[env.production.services]]
+binding = "SOL_API"
+service = "sol-api"
+
+[[env.production.services]]
+binding = "SOL_INTEGRATE"
+service = "sol-integrate"
+
+[[env.production.services]]
+binding = "SOL_NOTIFY"
+service = "sol-notify"
+
+[[env.production.unsafe.bindings]]
+name = "IP_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "38021"
+simple = { limit = 10, period = 60 }
+
+[[env.production.unsafe.bindings]]
+name = "FORM_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "38022"
+simple = { limit = 60, period = 60 }
+
+[[env.production.workflows]]
+name = "sol-gate-submission"
+binding = "SUBMISSION_WORKFLOW"
+class_name = "SubmissionWorkflow"
+
+[env.production.observability]
+enabled = true
