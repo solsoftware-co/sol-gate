@@ -1,0 +1,29 @@
+name: PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Unit tests only for now. A per-PR preview Worker with an e2e suite (a
+# submission that runs a sandbox integration and lands in Mailtrap) is a
+# follow-up, on the pattern of sol-integrate's SOL-20.
+jobs:
+  unit-test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run type-check
+      - run: npm run test:unit

@@ -1,0 +1,5 @@
+API_KEY=dev-local-key
+ENVIRONMENT=development
+SOL_API_KEY=dev-local-key
+SOL_INTEGRATE_API_KEY=dev-local-key
+SOL_NOTIFY_API_KEY=dev-local-key
