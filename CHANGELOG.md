@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/solsoftware-co/sol-gate/compare/v1.0.0...v1.1.0) (2026-09-29)
+
+
+### Features
+
+* authenticate with per-form keys verified by sol-api (SOL-42) ([e967d90](https://github.com/solsoftware-co/sol-gate/commit/e967d90918861965ffe091219360c628ff620c34))
+
 # 1.0.0 (2026-09-29)
 
 
