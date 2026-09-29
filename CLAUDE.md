@@ -8,7 +8,7 @@ First build (SOL-38): https://linear.app/sol-software/issue/SOL-38. Design: `sol
 
 ## Role
 
-**The front door** for client websites, and the only code in the stack that handles untrusted input. Every request is a form submission, sent **server-to-server** with an API key: a client's Next.js site posts its form to its own server (Server Action / Route Handler), which calls Sol Gate. Browsers never call Sol Gate directly — a key in browser code would be public. The caller supplies **only content** (`fields`); which integrations run, who is notified and what the notification says all come from the form's configuration in sol-api. Behind it, **sol-integrate** (Mailchimp; Sheets is SOL-10) and **sol-notify** (email; Slack is SOL-13) are internal-only and trust what Sol Gate sends them.
+**The front door** for client websites, and the only code in the stack that handles untrusted input. Every request is a form submission, sent **server-to-server** with a **per-form key**: a client's Next.js site posts its form to its own server (Server Action / Route Handler), which calls Sol Gate. Browsers never call Sol Gate directly — a key in browser code would be public. The caller supplies **only content** (`fields`); which integrations run, who is notified and what the notification says all come from the form's configuration in sol-api. Behind it, **sol-integrate** (Mailchimp; Sheets is SOL-10) and **sol-notify** (email; Slack is SOL-13) are internal-only and trust what Sol Gate sends them.
 
 ## Commands
 
@@ -23,7 +23,7 @@ npm run deploy     # deploy to Cloudflare Workers
 
 ```
 POST /v1/clients/:clientId/forms/:formId/submissions
-X-API-Key: <API_KEY>
+X-API-Key: sgk_…   (a key of this form, created in sol-api)
 { "fields": { "firstName": "Jane", "email": "jane@example.com", … } }
 
 → 202 { "success": true, "data": { "submissionId": "<uuid>" } }
@@ -33,13 +33,13 @@ Checked in this order:
 
 | Step | Failure |
 |---|---|
-| `X-API-Key` matches `API_KEY` (constant-time; `middleware/auth.ts`, every `/v1/*` route) | `401` |
+| `X-API-Key` is a key of **this form** (`lib/form-key.ts`): missing or not `sgk_…` → rejected without a sol-api call; otherwise `POST /v1/clients/:clientId/forms/:formId/api-keys/verify` in sol-api (SOL-42) | `401` · `503` if sol-api can't verify |
 | Rate limit: per form (60/min), Cloudflare rate-limiting binding | `429` + `Retry-After: 60` |
 | Load the form: `GET /v1/clients/:clientId/forms/:formId` (sol-api, client-scoped) | `404` unknown form / wrong client · `503` sol-api unreachable |
 | Body ≤ 64 KB, JSON, `{ fields: object }` | `413` · `422` |
 | `fields` against `forms.payload_schema` (JSON Schema 2020-12, `@cfworker/json-schema` — Ajv can't run on Workers) | `422` with `details: [{ path, message }]` |
 
-**No Turnstile, Origin check, CORS or per-IP limit** (decided 2026-09-28, see `sol-brain/sol-gate/decisions/decision-api-key-not-turnstile`): callers are servers, so there's no browser to run Turnstile, a server's `Origin` header proves nothing, and the only IP Sol Gate sees is the calling server's. `forms.allowed_origins` is currently unused. Bot protection for a public web form is the calling site's job (e.g. a honeypot or rate limit in the Next.js route). Anything else in the body (recipients, templates…) is ignored — Sol Gate *builds* each internal request from configuration, it never forwards the caller's.
+**No Turnstile, Origin check, CORS or per-IP limit** (decided 2026-09-28, see `sol-brain/sol-gate/decisions/decision-api-key-not-turnstile`; per-form keys since 2026-09-29): callers are servers, so there's no browser to run Turnstile, a server's `Origin` header proves nothing, and the only IP Sol Gate sees is the calling server's. `forms.allowed_origins` is currently unused. The key is checked **before** the rate limit, so requests without a valid key can't use up a form's quota and block its real submissions. Bot protection for a public web form is the calling site's job (e.g. a honeypot or rate limit in the Next.js route). Anything else in the body (recipients, templates…) is ignored — Sol Gate *builds* each internal request from configuration, it never forwards the caller's.
 
 ## After the 202: a Cloudflare Workflow per submission
 
@@ -75,7 +75,9 @@ No `preview` env yet — per-PR previews + e2e are a follow-up (sol-integrate's 
 
 Staging deploys from `.github/workflows/release.yml` on every merge to `main`; production is the same workflow's `deploy-production` job, gated behind the `production` GitHub Environment.
 
-**GitHub secrets:** `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `RELEASE_TOKEN`, and per env (`_STAGING` / `_PRODUCTION`): `API_KEY_*` (Sol Gate's own inbound key — callers send it), `SOL_API_KEY_*` (sol-api's key), `SOL_INTEGRATE_API_KEY_*` (= sol-integrate's `API_KEY_*`), `SOL_NOTIFY_API_KEY_*` (= sol-notify's `API_KEY_*`). One inbound key per environment for now; per-form keys (a hash on the `forms` row) are a later change.
+**GitHub secrets:** `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `RELEASE_TOKEN`, and per env (`_STAGING` / `_PRODUCTION`): `SOL_API_KEY_*` (sol-api's key), `SOL_INTEGRATE_API_KEY_*` (= sol-integrate's `API_KEY_*`), `SOL_NOTIFY_API_KEY_*` (= sol-notify's `API_KEY_*`). Sol Gate holds **no inbound key**: callers use per-form keys stored (as SHA-256 hashes) and verified in sol-api.
+
+**Form keys** are managed in sol-api (Bruno → Forms): `POST /v1/clients/:clientId/forms/:formId/api-keys` `{ name }` returns the `sgk_…` key **once**; `GET …/api-keys` lists them (no key material); `DELETE …/api-keys/:keyId` revokes. A form can have several keys, so rotation is create → deploy to the site → revoke the old one. In Next.js, keep the key in a server-only env var (never `NEXT_PUBLIC_…`).
 
 Local secrets go in `.dev.vars` (gitignored, see `.dev.vars.example`).
 
@@ -98,13 +100,12 @@ src/
 ├── lib/
 │   ├── service-fetch.ts           # binding fetch: timeout, text-first parse, ServiceError.permanent
 │   ├── sol-api.ts / sol-integrate.ts / sol-notify.ts   # typed clients
+│   ├── form-key.ts                # checkFormKey(): the caller's key, verified by sol-api
 │   ├── form-lookup.ts             # lookUpForm(): rate limit → load form
 │   ├── rate-limit.ts              # isRateLimited(): per-form binding
 │   ├── payload-schema.ts          # JSON Schema validation, displayValue()
 │   ├── environment.ts, logger.ts, responses.ts
-├── middleware/
-│   ├── auth.ts                    # X-API-Key, constant-time
-│   └── error.ts                   # global error envelope
+├── middleware/error.ts            # global error envelope
 └── types/index.ts                 # Env bindings, AppEnv, ErrorCode
 tests/unit/                        # Workers pool; fixtures/form-01.ts is the Form 01 scenario
 ```
@@ -115,7 +116,7 @@ tests/unit/                        # Workers pool; fixtures/form-01.ts is the Fo
 - A plain `fetch()` between Workers on the same `workers.dev` subdomain fails with `error code: 1042` — always go through the bindings.
 - Rate limiting is per Cloudflare location and eventually consistent: a cap on abuse, not an exact quota. `period` must be 10 or 60.
 - Workflow params and step outputs hold the submission (PII) for the instance's retention period. Instance retention isn't set explicitly yet.
-- Logs never carry field values — only IDs, counts and outcomes.
+- Logs never carry field values — only IDs, counts and outcomes. The logger redacts any field whose **name** contains `key`, `token`, `secret`… — so the matched form key's id is logged as `credentialId`, not `keyId`.
 
 ## Related
 
