@@ -92,7 +92,6 @@ jobs:
           echo "${{ secrets.SOL_API_KEY_STAGING }}" | npx wrangler secret put SOL_API_KEY --env staging
           echo "${{ secrets.SOL_INTEGRATE_API_KEY_STAGING }}" | npx wrangler secret put SOL_INTEGRATE_API_KEY --env staging
           echo "${{ secrets.SOL_NOTIFY_API_KEY_STAGING }}" | npx wrangler secret put SOL_NOTIFY_API_KEY --env staging
-          echo "${{ secrets.API_KEY_STAGING }}" | npx wrangler secret put API_KEY --env staging
 
   # Gated by the "production" GitHub Environment — requires manual approval
   # (Settings → Environments → production) before this job starts. Depends
@@ -124,4 +123,3 @@ jobs:
           echo "${{ secrets.SOL_API_KEY_PRODUCTION }}" | npx wrangler secret put SOL_API_KEY --env production
           echo "${{ secrets.SOL_INTEGRATE_API_KEY_PRODUCTION }}" | npx wrangler secret put SOL_INTEGRATE_API_KEY --env production
           echo "${{ secrets.SOL_NOTIFY_API_KEY_PRODUCTION }}" | npx wrangler secret put SOL_NOTIFY_API_KEY --env production
-          echo "${{ secrets.API_KEY_PRODUCTION }}" | npx wrangler secret put API_KEY --env production

@@ -9,8 +9,9 @@ port = 8790
 
 [vars]
 ENVIRONMENT = "development"
-# API_KEY (inbound), SOL_API_KEY, SOL_INTEGRATE_API_KEY, SOL_NOTIFY_API_KEY
-# are Cloudflare Secrets — not set here
+# SOL_API_KEY, SOL_INTEGRATE_API_KEY, SOL_NOTIFY_API_KEY are Cloudflare
+# Secrets — not set here. Callers authenticate with per-form keys, verified
+# by sol-api (SOL-42), so Sol Gate holds no inbound key.
 
 # sol-api, sol-integrate and sol-notify are reached only through service
 # bindings, never URLs — a plain fetch() to another Worker on the same
@@ -84,7 +85,7 @@ class_name = "SubmissionWorkflow"
 [env.staging.observability]
 enabled = true
 
-# Reachable on workers.dev (API-key protected); a custom domain (e.g.
+# Reachable on workers.dev (per-form keys); a custom domain (e.g.
 # gate.solsoftware.co) is a routes change later.
 [env.production]
 name = "sol-gate"
