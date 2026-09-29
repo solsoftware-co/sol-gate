@@ -90,3 +90,26 @@ export async function listChannels(env: SolApiEnv, clientId: string, ids: string
   });
   return data;
 }
+
+export type FormKeyVerification = { authenticated: true; keyId: string } | { authenticated: false };
+
+// SOL-42: sol-api checks a caller's form key and answers yes/no (plus which
+// key matched, for logs) — key hashes never leave sol-api. Always a 200; an
+// unknown form, or another client's, is just `authenticated: false`. The key
+// goes in the body, never the URL, which ends up in request logs.
+export async function verifyFormApiKey(
+  env: SolApiEnv,
+  clientId: string,
+  formId: string,
+  key: string
+): Promise<FormKeyVerification> {
+  const { data } = await serviceFetch<FormKeyVerification>({
+    service: "sol-api",
+    binding: env.SOL_API,
+    apiKey: env.SOL_API_KEY,
+    path: `/v1/clients/${encodeURIComponent(clientId)}/forms/${encodeURIComponent(formId)}/api-keys/verify`,
+    timeoutMs: FETCH_TIMEOUT_MS,
+    init: { method: "POST", body: JSON.stringify({ key }) },
+  });
+  return data.authenticated ? { authenticated: true, keyId: data.keyId } : { authenticated: false };
+}

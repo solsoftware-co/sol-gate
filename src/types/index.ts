@@ -9,8 +9,6 @@ export interface Env {
   SOL_INTEGRATE_API_KEY: string;
   SOL_NOTIFY: Fetcher;
   SOL_NOTIFY_API_KEY: string;
-  /** Inbound key every caller sends as X-API-Key — one per environment for now. */
-  API_KEY: string;
   /** Rate-limiting binding, per form. */
   FORM_RATE_LIMITER: RateLimit;
   /** One instance per accepted submission (instance id = submissionId). */

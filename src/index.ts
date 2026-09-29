@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { errorHandler } from "./middleware/error.js";
-import { requireApiKey } from "./middleware/auth.js";
 import health from "./routes/health.js";
 import submissions from "./routes/submissions.js";
 import { parseEnvironment } from "./lib/environment.js";
@@ -21,10 +20,9 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-// Everything but /health needs the API key: callers are servers (e.g. a
-// client's Next.js server), never browsers.
+// /health is open; submissions need a key of the form they submit to
+// (routes/submissions.ts → lib/form-key.ts).
 app.route("/health", health);
-app.use("/v1/*", requireApiKey);
 app.route("/v1/clients", submissions);
 
 export default app;

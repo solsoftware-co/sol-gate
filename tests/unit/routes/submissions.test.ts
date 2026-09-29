@@ -3,10 +3,16 @@ import app from "../../../src/index.js";
 import { CLIENT_ID, FORM_ID, form01, submission } from "../fixtures/form-01.js";
 
 const PATH = `/v1/clients/${CLIENT_ID}/forms/${FORM_ID}/submissions`;
-const API_KEY = "gate-key";
+const FORM_PATH = `/v1/clients/${CLIENT_ID}/forms/${FORM_ID}`;
+const VERIFY_PATH = `${FORM_PATH}/api-keys/verify`;
+const FORM_KEY = "sgk_valid-form-key";
+const KEY_ID = "9a9a9a9a-0000-4000-8000-000000000009";
 
+// Fake sol-api: answers the key check (POST …/api-keys/verify) and the
+// form lookup (GET …/forms/:formId) separately.
+let verifyResponse: (key: string) => Response;
 let solApiResponse: () => Response;
-let solApiPaths: string[];
+let solApiCalls: { method: string; path: string; body?: any }[];
 let formAllowed: boolean;
 let rateLimitKeys: string[];
 let workflowCreate: ReturnType<typeof vi.fn>;
@@ -15,9 +21,11 @@ function env(overrides: Record<string, unknown> = {}) {
   return {
     ENVIRONMENT: "staging",
     SOL_API: {
-      fetch: async (input: string) => {
-        solApiPaths.push(new URL(input).pathname);
-        return solApiResponse();
+      fetch: async (input: string, init?: RequestInit) => {
+        const path = new URL(input).pathname;
+        const body = init?.body ? JSON.parse(init.body as string) : undefined;
+        solApiCalls.push({ method: init?.method ?? "GET", path, ...(body && { body }) });
+        return path === VERIFY_PATH ? verifyResponse(body.key) : solApiResponse();
       },
     } as unknown as Fetcher,
     SOL_API_KEY: "api-key",
@@ -25,7 +33,6 @@ function env(overrides: Record<string, unknown> = {}) {
     SOL_INTEGRATE_API_KEY: "integrate-key",
     SOL_NOTIFY: {} as Fetcher,
     SOL_NOTIFY_API_KEY: "notify-key",
-    API_KEY,
     FORM_RATE_LIMITER: { limit: async ({ key }: { key: string }) => (rateLimitKeys.push(`form:${key}`), { success: formAllowed }) },
     SUBMISSION_WORKFLOW: { create: workflowCreate },
     ...overrides,
@@ -39,7 +46,7 @@ async function send(
     opts.path ?? PATH,
     {
       method: opts.method ?? "POST",
-      headers: { "Content-Type": "application/json", "X-API-Key": API_KEY, ...opts.headers },
+      headers: { "Content-Type": "application/json", "X-API-Key": FORM_KEY, ...opts.headers },
       body: opts.rawBody ?? JSON.stringify(opts.body ?? { fields: submission }),
     },
     env(opts.env)
@@ -47,9 +54,13 @@ async function send(
   return { res, json: res.headers.get("Content-Type")?.includes("json") ? ((await res.json()) as any) : null };
 }
 
+const solApiPaths = () => solApiCalls.map((call) => call.path);
+
 beforeEach(() => {
+  verifyResponse = (key) =>
+    Response.json({ success: true, data: key === FORM_KEY ? { authenticated: true, keyId: KEY_ID } : { authenticated: false } });
   solApiResponse = () => Response.json({ success: true, data: form01 });
-  solApiPaths = [];
+  solApiCalls = [];
   formAllowed = true;
   rateLimitKeys = [];
   workflowCreate = vi.fn().mockResolvedValue({ id: "instance" });
@@ -75,21 +86,53 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
     });
   });
 
-  it("loads the form under its client from sol-api", async () => {
+  it("verifies the form key with sol-api (key in the body, never the URL), then loads the form", async () => {
     await send();
-    expect(solApiPaths).toEqual([`/v1/clients/${CLIENT_ID}/forms/${FORM_ID}`]);
+    expect(solApiCalls).toEqual([
+      { method: "POST", path: VERIFY_PATH, body: { key: FORM_KEY } },
+      { method: "GET", path: FORM_PATH },
+    ]);
+  });
+
+  it("logs which form key was used (its id, unredacted) and never the key itself", async () => {
+    const logSpy = vi.spyOn(console, "log");
+    await send();
+
+    const accepted = logSpy.mock.calls.map(([line]) => JSON.parse(line)).find((e) => e.message === "submission accepted");
+    expect(accepted.credentialId).toBe(KEY_ID);
+    expect(JSON.stringify(logSpy.mock.calls)).not.toContain(FORM_KEY);
+    logSpy.mockRestore();
   });
 
   it.each([
-    ["no API key", {}],
-    ["a wrong API key", { "X-API-Key": "nope" }],
-  ])("401s %s, before rate limiting or loading the form", async (_label, headers) => {
-    const { res, json } = await send({ headers: { "X-API-Key": "", ...headers } });
+    ["no key", ""],
+    ["a key without the sgk_ prefix", "gate-key"],
+  ])("401s %s without calling sol-api", async (_label, key) => {
+    const { res, json } = await send({ headers: { "X-API-Key": key } });
 
     expect(res.status).toBe(401);
     expect(json.error.code).toBe("UNAUTHORIZED");
+    expect(solApiCalls).toHaveLength(0);
     expect(rateLimitKeys).toHaveLength(0);
-    expect(solApiPaths).toHaveLength(0);
+  });
+
+  it("401s a key sol-api doesn't accept for this form, before rate limiting or loading the form", async () => {
+    const { res, json } = await send({ headers: { "X-API-Key": "sgk_someone-elses-key" } });
+
+    expect(res.status).toBe(401);
+    expect(json.error.code).toBe("UNAUTHORIZED");
+    expect(solApiPaths()).toEqual([VERIFY_PATH]);
+    expect(rateLimitKeys).toHaveLength(0);
+    expect(workflowCreate).not.toHaveBeenCalled();
+  });
+
+  it("503s (not 401s) when sol-api can't verify the key", async () => {
+    verifyResponse = () => new Response("error code: 1042", { status: 530 });
+    const { res, json } = await send();
+
+    expect(res.status).toBe(503);
+    expect(json.error.code).toBe("SERVICE_UNAVAILABLE");
+    expect(workflowCreate).not.toHaveBeenCalled();
   });
 
   it("ignores the Origin header (callers are servers; there's no Origin check)", async () => {
@@ -109,7 +152,7 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
     expect(res.status).toBe(429);
     expect(json.error.code).toBe("RATE_LIMITED");
     expect(res.headers.get("Retry-After")).toBe("60");
-    expect(solApiPaths).toHaveLength(0);
+    expect(solApiPaths()).toEqual([VERIFY_PATH]);
   });
 
   it("404s an unknown form, or a form under another client", async () => {
@@ -121,7 +164,7 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
     expect(workflowCreate).not.toHaveBeenCalled();
   });
 
-  it("503s when sol-api can't be reached", async () => {
+  it("503s when sol-api can't load the form", async () => {
     solApiResponse = () => new Response("error code: 1042", { status: 530 });
     const { res, json } = await send();
 
@@ -196,7 +239,7 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
 });
 
 describe("other routes", () => {
-  it("GET /health needs no API key", async () => {
+  it("GET /health needs no key", async () => {
     const res = await app.request("/health", {}, env());
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ success: true, data: { status: "ok", environment: "staging" } });
