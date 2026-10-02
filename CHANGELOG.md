@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/solsoftware-co/sol-gate/compare/v1.1.0...v1.1.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* log a submission with failures at warn ([1271da6](https://github.com/solsoftware-co/sol-gate/commit/1271da62b388b20a19f5294d90a282fe1c01a739))
+
 # [1.1.0](https://github.com/solsoftware-co/sol-gate/compare/v1.0.0...v1.1.0) (2026-09-29)
 
 
