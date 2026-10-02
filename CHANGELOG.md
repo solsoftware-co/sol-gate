@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/solsoftware-co/sol-gate/compare/v1.2.0...v1.2.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* send each integration's type label to notifications (SOL-44) ([bf9cf88](https://github.com/solsoftware-co/sol-gate/commit/bf9cf88fc3c123497e79c4f1db03e713da27b3bb))
+
 # [1.2.0](https://github.com/solsoftware-co/sol-gate/compare/v1.1.1...v1.2.0) (2026-10-02)
 
 
