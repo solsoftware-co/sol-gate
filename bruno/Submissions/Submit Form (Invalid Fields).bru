@@ -1,0 +1,31 @@
+meta {
+  name: Submit Form (Invalid Fields)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/v1/clients/{{clientId}}/forms/{{formId}}/submissions
+  body: json
+  auth: none
+}
+
+headers {
+  X-API-Key: {{formKey}}
+}
+
+body:json {
+  {
+    "fields": {
+      "firstName": "",
+      "email": "not-an-email"
+    }
+  }
+}
+
+docs {
+  Fails the Form 01 `payload_schema` → 422 VALIDATION_ERROR with
+  `details: [{ path, message }]` (empty firstName, missing lastName, bad
+  email). Needs a valid `formKey`: the key is checked before the body, so
+  a bad key is a 401 instead. Nothing is processed.
+}

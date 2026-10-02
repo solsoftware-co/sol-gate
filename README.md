@@ -15,4 +15,6 @@ npm run dev   # http://localhost:8790
 npm test
 ```
 
+Manual requests live in the Bruno collection at `bruno/` (Dev, Staging, Production).
+
 See [CLAUDE.md](./CLAUDE.md) for the flow, environments and secrets.
