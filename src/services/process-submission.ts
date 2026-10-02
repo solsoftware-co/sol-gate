@@ -107,7 +107,7 @@ export async function processSubmission(env: ProcessEnv, params: SubmissionParam
   };
 
   if (form.channels.length === 0) {
-    logger.info("submission processed", { ...log, ...summary });
+    logProcessed(log, summary);
     return summary;
   }
 
@@ -127,7 +127,7 @@ export async function processSubmission(env: ProcessEnv, params: SubmissionParam
       status: "failed" as const,
       detail: "Couldn't resolve channels",
     }));
-    logger.info("submission processed", { ...log, ...summary });
+    logProcessed(log, summary);
     return summary;
   }
   const byId = new Map(resolved.map((c) => [c.id, c]));
@@ -174,6 +174,15 @@ export async function processSubmission(env: ProcessEnv, params: SubmissionParam
     })
   );
 
-  logger.info("submission processed", { ...log, ...summary });
+  logProcessed(log, summary);
   return summary;
+}
+
+// Failed integrations and notifications don't fail the workflow (they're
+// recorded and reported), so this line's level is what surfaces them in
+// observability: warn when anything failed.
+function logProcessed(log: Record<string, string>, summary: SubmissionSummary): void {
+  const failed =
+    summary.integrations.some((i) => i.outcome === "failed") || summary.notifications.some((n) => n.status === "failed");
+  (failed ? logger.warn : logger.info)("submission processed", { ...log, ...summary });
 }

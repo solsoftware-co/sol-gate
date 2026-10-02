@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { processSubmission, type Step, type SubmissionParams } from "../../../src/services/process-submission.js";
 import {
   CLIENT_ID,
@@ -308,5 +308,31 @@ describe("processSubmission — failures", () => {
 
     expect(names).toEqual([`integration ${NEWSLETTER_ID}`]);
     expect(solApi.calls).toHaveLength(0);
+  });
+});
+
+describe("processSubmission — log level", () => {
+  async function processedLine() {
+    const logSpy = vi.spyOn(console, "log");
+    const errorSpy = vi.spyOn(console, "error");
+    await processSubmission(env(), params, fakeStep().step);
+    const lines = [...logSpy.mock.calls, ...errorSpy.mock.calls].map(([line]) => JSON.parse(line));
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    return lines.find((e) => e.message === "submission processed");
+  }
+
+  it("logs the summary at info when everything went through", async () => {
+    expect((await processedLine()).level).toBe("info");
+  });
+
+  it("logs the summary at warn when an integration failed", async () => {
+    solIntegrate = fakeService(() => ok({ outcome: "failed", detail: "Member In Compliance State" }));
+    expect((await processedLine()).level).toBe("warn");
+  });
+
+  it("logs the summary at warn when a notification failed", async () => {
+    solNotify = fakeService(() => fail(422, "Validation failed"));
+    expect((await processedLine()).level).toBe("warn");
   });
 });
