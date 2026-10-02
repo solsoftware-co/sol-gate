@@ -18,7 +18,10 @@ export interface SolNotifyEnv {
 }
 
 export interface NotificationIntegrationResult {
+  /** The integration's own name ("Newsletter") — tells integrations apart in a results table. */
   name: string;
+  /** The service it writes to ("Mailchimp") — labels a single integration's "View in …" button (SOL-44). */
+  typeLabel: string;
   outcome: IntegrationOutcome;
   url?: string;
   detail?: string;

@@ -68,7 +68,12 @@ export function mapIntegrationFields(integration: FormIntegration, fields: Recor
 
 const TYPE_LABELS: Record<string, string> = { mailchimp: "Mailchimp", google_sheets: "Google Sheets" };
 
+/** The service an integration writes to, e.g. "Mailchimp" — what a "View in …" button names. */
+export function integrationTypeLabel(type: string): string {
+  return TYPE_LABELS[type] ?? type;
+}
+
 /** The name shown for an integration in a notification. */
 export function integrationDisplayName(integration: Pick<FormIntegration, "name" | "type">): string {
-  return integration.name ?? TYPE_LABELS[integration.type] ?? integration.type;
+  return integration.name ?? integrationTypeLabel(integration.type);
 }
