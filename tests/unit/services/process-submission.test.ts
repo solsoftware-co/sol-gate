@@ -128,7 +128,7 @@ describe("processSubmission — Form 01", () => {
       fields: {
         submission: { firstName: "Jane", lastName: "Doe", email: "jane@example.com" },
         integrations: [
-          { name: "Newsletter", outcome: "succeeded", url: "https://us21.admin.mailchimp.com/lists/members/view?id=7" },
+          { name: "Newsletter", typeLabel: "Mailchimp", outcome: "succeeded", url: "https://us21.admin.mailchimp.com/lists/members/view?id=7" },
         ],
       },
       cta: { url: "mailto:jane@example.com", label: "Reply to Jane" },
@@ -146,8 +146,8 @@ describe("processSubmission — Form 01", () => {
     expect(request.recipients).toEqual(["g2@acme.test"]);
     expect(request.fields.submission).toEqual(submission);
     expect(request.fields.integrations).toEqual([
-      { name: "Newsletter", outcome: "succeeded", url: "https://us21.admin.mailchimp.com/lists/members/view?id=7" },
-      { name: "Leads sheet", outcome: "skipped", detail: "Google Sheets isn't supported yet" },
+      { name: "Newsletter", typeLabel: "Mailchimp", outcome: "succeeded", url: "https://us21.admin.mailchimp.com/lists/members/view?id=7" },
+      { name: "Leads sheet", typeLabel: "Google Sheets", outcome: "skipped", detail: "Google Sheets isn't supported yet" },
     ]);
   });
 
@@ -218,7 +218,7 @@ describe("processSubmission — failures", () => {
     expect(summary.integrations[0]).toEqual({ integrationId: NEWSLETTER_ID, outcome: "failed" });
     expect(solNotify.calls).toHaveLength(3);
     expect(notificationFor(GROUP_01_ID).fields.integrations).toEqual([
-      { name: "Newsletter", outcome: "failed", detail: "Couldn't reach the integration service" },
+      { name: "Newsletter", typeLabel: "Mailchimp", outcome: "failed", detail: "Couldn't reach the integration service" },
     ]);
   });
 
@@ -241,7 +241,7 @@ describe("processSubmission — failures", () => {
     await processSubmission(env(), params, step);
 
     expect(notificationFor(GROUP_01_ID).fields.integrations).toEqual([
-      { name: "Newsletter", outcome: "failed", url: "https://us21.admin.mailchimp.com/lists/", detail: "Member In Compliance State" },
+      { name: "Newsletter", typeLabel: "Mailchimp", outcome: "failed", url: "https://us21.admin.mailchimp.com/lists/", detail: "Member In Compliance State" },
     ]);
   });
 

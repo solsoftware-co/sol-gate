@@ -2,7 +2,7 @@ import { displayValue } from "../lib/payload-schema.js";
 import type { FormChannel, FormIntegration } from "../lib/sol-api.js";
 import type { IntegrationResult, SubmissionContext } from "../lib/sol-integrate.js";
 import type { NotificationIntegrationResult, NotificationRequest } from "../lib/sol-notify.js";
-import { integrationDisplayName } from "./integration-mapping.js";
+import { integrationDisplayName, integrationTypeLabel } from "./integration-mapping.js";
 
 // Builds one form channel's notification — pure, so the Form 01 scenario
 // can be checked without any services. Each channel on a form gets its own
@@ -93,7 +93,7 @@ function reportedIntegrations(
   const wanted = new Set(integrationIds);
   return integrations
     .filter((i) => wanted.has(i.integrationId) && results[i.integrationId])
-    .map((i) => ({ name: integrationDisplayName(i), ...results[i.integrationId] }));
+    .map((i) => ({ name: integrationDisplayName(i), typeLabel: integrationTypeLabel(i.type), ...results[i.integrationId] }));
 }
 
 const EMAIL_PATTERN = /^[^\s@?&#]+@[^\s@?&#]+\.[^\s@?&#]+$/;

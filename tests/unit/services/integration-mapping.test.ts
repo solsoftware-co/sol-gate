@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapIntegrationFields, integrationDisplayName } from "../../../src/services/integration-mapping.js";
+import { mapIntegrationFields, integrationDisplayName, integrationTypeLabel } from "../../../src/services/integration-mapping.js";
 import type { FormIntegration } from "../../../src/lib/sol-api.js";
 import { form01, submission } from "../fixtures/form-01.js";
 
@@ -66,5 +66,13 @@ describe("integrationDisplayName", () => {
     expect(integrationDisplayName({ name: "Newsletter", type: "mailchimp" })).toBe("Newsletter");
     expect(integrationDisplayName({ name: null, type: "google_sheets" })).toBe("Google Sheets");
     expect(integrationDisplayName({ name: null, type: "hubspot" })).toBe("hubspot");
+  });
+});
+
+describe("integrationTypeLabel", () => {
+  it("names the service an integration writes to, whatever the integration is called", () => {
+    expect(integrationTypeLabel("mailchimp")).toBe("Mailchimp");
+    expect(integrationTypeLabel("google_sheets")).toBe("Google Sheets");
+    expect(integrationTypeLabel("hubspot")).toBe("hubspot");
   });
 });
