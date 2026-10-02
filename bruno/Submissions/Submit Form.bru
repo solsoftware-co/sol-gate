@@ -1,0 +1,43 @@
+meta {
+  name: Submit Form
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v1/clients/{{clientId}}/forms/{{formId}}/submissions
+  body: json
+  auth: none
+}
+
+headers {
+  X-API-Key: {{formKey}}
+}
+
+body:json {
+  {
+    "fields": {
+      "firstName": "Jane",
+      "lastName": "Doe",
+      "email": "jane@example.com",
+      "interestedIn": "Website redesign",
+      "budget": "$10k-$25k",
+      "comment": "Sent from Bruno."
+    }
+  }
+}
+
+docs {
+  The Form 01 scenario (sol-brain/sol-api/03-scenario-form-01.md). Returns
+  202 with a `submissionId`; integrations and notifications then run in a
+  Workflow (`sol-gate-submission*`), so check its instance — or the
+  `submission processed` log line — for the outcome.
+
+  `formKey` is a key of this form (`sgk_…`): create one with sol-api's
+  Forms → Create Form API Key, against the same environment. Point `clientId`
+  / `formId` at a form whose `payload_schema` these fields satisfy, or edit
+  them. Only `fields` is read — anything else in the body is ignored.
+
+  Each call does real work (Mailchimp write, emails) and counts toward the
+  form's rate limit (60/min).
+}

@@ -81,6 +81,8 @@ Staging deploys from `.github/workflows/release.yml` on every merge to `main`; p
 
 Local secrets go in `.dev.vars` (gitignored, see `.dev.vars.example`).
 
+**Bruno** (`bruno/`): Health Check, and Submissions → Submit Form (Form 01 fields → 202), Invalid Fields (422), No Key (401). Environments Dev, Staging and Production. Unlike sol-integrate / sol-notify, staging and production are reachable because Sol Gate is the public front door. Each environment has `clientId` / `formId` vars (Dev defaults to the Form 01 fixture ids, Staging to client `sol`'s staging test form; Production is blank, so fill it in) and a secret `formKey`: create it with sol-api's Bruno (Forms → Create Form API Key) against the same environment. No PR Preview environment until SOL-40. A 202 does real work (Mailchimp, emails) and counts toward the form's 60/min.
+
 ## Architecture
 
 **Stack:** Hono 4.x → Cloudflare Workers + Workflows, Zod, `@cfworker/json-schema`, no database. Scaffolded from sol-integrate — same logger (key/token redaction), response envelope, `ENVIRONMENT` enum and release pipeline.

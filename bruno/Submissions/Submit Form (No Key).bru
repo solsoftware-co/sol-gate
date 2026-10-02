@@ -1,0 +1,26 @@
+meta {
+  name: Submit Form (No Key)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/v1/clients/{{clientId}}/forms/{{formId}}/submissions
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "fields": {
+      "firstName": "Jane",
+      "lastName": "Doe",
+      "email": "jane@example.com"
+    }
+  }
+}
+
+docs {
+  No `X-API-Key` → 401, rejected without a sol-api call and before the
+  rate limit, so it never uses up the form's quota.
+}
