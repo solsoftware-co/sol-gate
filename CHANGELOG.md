@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/solsoftware-co/sol-gate/compare/v1.1.1...v1.2.0) (2026-10-02)
+
+
+### Features
+
+* Bruno collection for Sol Gate (SOL-41) ([71942ae](https://github.com/solsoftware-co/sol-gate/commit/71942aede1bb3381b0fc0d29f745317ef4962756))
+
 ## [1.1.1](https://github.com/solsoftware-co/sol-gate/compare/v1.1.0...v1.1.1) (2026-10-02)
 
 
