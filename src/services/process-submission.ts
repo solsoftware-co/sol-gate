@@ -6,6 +6,7 @@ import { runIntegration, type IntegrationResult, type SolIntegrateEnv } from "..
 import { sendNotification, type SolNotifyEnv } from "../lib/sol-notify.js";
 import { mapIntegrationFields } from "./integration-mapping.js";
 import { buildNotification, type ResolvedChannel } from "./notifications.js";
+import { withLogScope, type LogScope } from "../lib/log-context.js";
 
 // Everything after the 202: run the form's integrations, then notify every
 // one of its channels — always, whether the integrations succeeded or not,
@@ -23,6 +24,19 @@ import { buildNotification, type ResolvedChannel } from "./notifications.js";
 
 export interface Step {
   do<T>(name: string, config: WorkflowStepConfig, callback: () => Promise<T>): Promise<T>;
+}
+
+/**
+ * `step`, with each callback run inside `scope`. Workflows runs a step's
+ * callback in a fresh async context, so without this the run's log scope —
+ * and the trace / submission ids serviceFetch() forwards from it — would stop
+ * at the step boundary (SOL-46).
+ */
+export function stepInLogScope(step: Step, scope: LogScope): Step {
+  return {
+    do: <T>(name: string, config: WorkflowStepConfig, callback: () => Promise<T>) =>
+      step.do(name, config, () => withLogScope(scope, callback)),
+  };
 }
 
 /** The form as it was when the submission was accepted — processing never reloads it. */
