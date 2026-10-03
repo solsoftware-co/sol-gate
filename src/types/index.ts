@@ -19,7 +19,8 @@ export interface Env {
 
 export type AppEnv = {
   Bindings: Env;
-  Variables: { requestId: string };
+  /** traceId: every request (index.ts). submissionId: set as soon as a submission arrives (routes/submissions.ts). */
+  Variables: { traceId: string; submissionId: string };
 };
 
 export enum ErrorCode {

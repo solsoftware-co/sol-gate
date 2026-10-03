@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { serviceFetch, ServiceError } from "../../../src/lib/service-fetch.js";
+import { withLogScope } from "../../../src/lib/log-context.js";
 
 const binding = (respond: () => Response | Promise<Response>) => ({ fetch: async () => respond() }) as unknown as Fetcher;
 const call = (respond: () => Response | Promise<Response>, timeoutMs = 1_000) =>
@@ -46,5 +47,24 @@ describe("serviceFetch", () => {
     expect(err.status).toBeNull();
     expect(err.permanent).toBe(false);
     expect(err.message).toContain("timed out");
+  });
+
+  it("forwards the scope's trace and submission ids, and sends neither outside a scope", async () => {
+    const sent: Headers[] = [];
+    const recording = {
+      fetch: async (_url: string, init: RequestInit) => {
+        sent.push(new Headers(init.headers));
+        return Response.json({ success: true, data: {} });
+      },
+    } as unknown as Fetcher;
+    const opts = { service: "sol-api" as const, binding: recording, apiKey: "k", path: "/x", timeoutMs: 1_000 };
+
+    await withLogScope({ traceId: "trace-1", submissionId: "sub-1" }, () => serviceFetch(opts));
+    await serviceFetch(opts);
+
+    expect(sent[0].get("X-Trace-Id")).toBe("trace-1");
+    expect(sent[0].get("X-Submission-Id")).toBe("sub-1");
+    expect(sent[1].has("X-Trace-Id")).toBe(false);
+    expect(sent[1].has("X-Submission-Id")).toBe(false);
   });
 });

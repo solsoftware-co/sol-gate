@@ -13,6 +13,7 @@ const KEY_ID = "9a9a9a9a-0000-4000-8000-000000000009";
 let verifyResponse: (key: string) => Response;
 let solApiResponse: () => Response;
 let solApiCalls: { method: string; path: string; body?: any }[];
+let solApiHeaders: { traceId: string | null; submissionId: string | null }[];
 let formAllowed: boolean;
 let rateLimitKeys: string[];
 let workflowCreate: ReturnType<typeof vi.fn>;
@@ -25,6 +26,8 @@ function env(overrides: Record<string, unknown> = {}) {
         const path = new URL(input).pathname;
         const body = init?.body ? JSON.parse(init.body as string) : undefined;
         solApiCalls.push({ method: init?.method ?? "GET", path, ...(body && { body }) });
+        const headers = new Headers(init?.headers);
+        solApiHeaders.push({ traceId: headers.get("X-Trace-Id"), submissionId: headers.get("X-Submission-Id") });
         return path === VERIFY_PATH ? verifyResponse(body.key) : solApiResponse();
       },
     } as unknown as Fetcher,
@@ -61,6 +64,7 @@ beforeEach(() => {
     Response.json({ success: true, data: key === FORM_KEY ? { authenticated: true, keyId: KEY_ID } : { authenticated: false } });
   solApiResponse = () => Response.json({ success: true, data: form01 });
   solApiCalls = [];
+  solApiHeaders = [];
   formAllowed = true;
   rateLimitKeys = [];
   workflowCreate = vi.fn().mockResolvedValue({ id: "instance" });
@@ -92,6 +96,68 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
       { method: "POST", path: VERIFY_PATH, body: { key: FORM_KEY } },
       { method: "GET", path: FORM_PATH },
     ]);
+  });
+
+  describe("trace and submission ids (SOL-46)", () => {
+    const UUID = /^[0-9a-f-]{36}$/;
+
+    it("returns a traceId and a different submissionId, and sends both to sol-api", async () => {
+      const { res, json } = await send();
+
+      const { submissionId } = json.data;
+      const traceId = res.headers.get("X-Trace-Id");
+      expect(traceId).toMatch(UUID);
+      expect(traceId).not.toBe(submissionId);
+      expect(res.headers.get("X-Submission-Id")).toBe(submissionId);
+      expect(solApiHeaders).toEqual([
+        { traceId, submissionId },
+        { traceId, submissionId },
+      ]);
+    });
+
+    it("hands the trace to the workflow, so the run logs under it", async () => {
+      const { res } = await send();
+      expect(workflowCreate.mock.calls[0][0].params.traceId).toBe(res.headers.get("X-Trace-Id"));
+    });
+
+    it("puts the environment and both ids on every log line of the request", async () => {
+      const logSpy = vi.spyOn(console, "log");
+      const { res, json } = await send();
+
+      const lines = logSpy.mock.calls.map(([line]) => JSON.parse(line));
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line).toMatchObject({
+          environment: "staging",
+          traceId: res.headers.get("X-Trace-Id"),
+          submissionId: json.data.submissionId,
+        });
+        expect(line).not.toHaveProperty("requestId");
+      }
+      logSpy.mockRestore();
+    });
+
+    it("gives a rejected submission both ids too, on its log line and the response, so a 401 can be traced", async () => {
+      const errorSpy = vi.spyOn(console, "error");
+      const { res } = await send({ headers: { "X-API-Key": "sgk_wrong-key" } });
+
+      expect(res.status).toBe(401);
+      const traceId = res.headers.get("X-Trace-Id");
+      const submissionId = res.headers.get("X-Submission-Id");
+      expect(traceId).toMatch(UUID);
+      expect(submissionId).toMatch(UUID);
+      const rejected = errorSpy.mock.calls.map(([line]) => JSON.parse(line)).find((e) => e.message.startsWith("rejected"));
+      expect(rejected).toMatchObject({ environment: "staging", traceId, submissionId });
+      errorSpy.mockRestore();
+    });
+
+    it("ignores a caller's X-Trace-Id and X-Submission-Id: both are always Sol Gate's own", async () => {
+      const { res, json } = await send({ headers: { "X-Trace-Id": "caller-trace", "X-Submission-Id": "caller-sub" } });
+
+      expect(res.headers.get("X-Trace-Id")).not.toBe("caller-trace");
+      expect(json.data.submissionId).not.toBe("caller-sub");
+      expect(JSON.stringify(solApiHeaders)).not.toMatch(/caller-/);
+    });
   });
 
   it("logs which form key was used (its id, unredacted) and never the key itself", async () => {
@@ -229,6 +295,7 @@ describe("POST /v1/clients/:clientId/forms/:formId/submissions", () => {
 
     expect(res.status).toBe(500);
     expect(json.error.code).toBe("INTERNAL_ERROR");
+    expect(res.headers.get("X-Submission-Id")).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("500s every request on an invalid ENVIRONMENT", async () => {

@@ -4,6 +4,8 @@
 // fails with Cloudflare "error code: 1042". The host in the URL is ignored
 // by a binding; only the path matters.
 
+import { traceHeaders } from "./log-context.js";
+
 type ApiEnvelope<T> =
   | { success: true; data: T }
   | { success: false; error: { code: string; message: string; details?: unknown } };
@@ -50,6 +52,8 @@ export async function serviceFetch<T>(opts: ServiceFetchOptions): Promise<{ stat
       headers: {
         "X-API-Key": opts.apiKey,
         "Content-Type": "application/json",
+        // So the service logs under the same trace and submission (SOL-46).
+        ...traceHeaders(),
         ...opts.init?.headers,
       },
       signal: controller.signal,

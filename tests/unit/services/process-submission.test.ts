@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { processSubmission, type Step, type SubmissionParams } from "../../../src/services/process-submission.js";
+import { withLogScope } from "../../../src/lib/log-context.js";
 import {
   CLIENT_ID,
   FORM_ID,
@@ -19,6 +20,9 @@ interface Recorded {
   path: string;
   body: any;
   apiKey: string | null;
+  /** The X-Trace-Id and X-Submission-Id headers. */
+  traceIdHeader: string | null;
+  submissionIdHeader: string | null;
 }
 
 function fakeService(handler: Handler) {
@@ -27,7 +31,14 @@ function fakeService(handler: Handler) {
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       const body = init?.body ? JSON.parse(init.body as string) : undefined;
-      calls.push({ path: url.pathname + url.search, body, apiKey: new Headers(init?.headers).get("X-API-Key") });
+      const headers = new Headers(init?.headers);
+      calls.push({
+        path: url.pathname + url.search,
+        body,
+        apiKey: headers.get("X-API-Key"),
+        traceIdHeader: headers.get("X-Trace-Id"),
+        submissionIdHeader: headers.get("X-Submission-Id"),
+      });
       return handler(url.pathname + url.search, body);
     },
   } as unknown as Fetcher;
@@ -97,6 +108,8 @@ describe("processSubmission — Form 01", () => {
     expect(solIntegrate.calls[0]).toEqual({
       path: "/",
       apiKey: "integrate-key",
+      traceIdHeader: null, // run outside a log scope here; see the SOL-46 tests below
+      submissionIdHeader: null,
       body: {
         clientId: CLIENT_ID,
         type: "mailchimp",
@@ -334,5 +347,17 @@ describe("processSubmission — log level", () => {
   it("logs the summary at warn when a notification failed", async () => {
     solNotify = fakeService(() => fail(422, "Validation failed"));
     expect((await processedLine()).level).toBe("warn");
+  });
+});
+
+describe("processSubmission — trace and submission ids (SOL-46)", () => {
+  it("sends the run's trace and submission ids to every service it calls, through steps and parallel work", async () => {
+    await withLogScope({ environment: "staging", traceId: "trace-1", submissionId: SUBMISSION_ID }, () =>
+      processSubmission(env(), params, fakeStep().step)
+    );
+
+    const allCalls = [...solIntegrate.calls, ...solApi.calls, ...solNotify.calls];
+    expect(allCalls.length).toBeGreaterThan(0);
+    expect(allCalls.every((c) => c.traceIdHeader === "trace-1" && c.submissionIdHeader === SUBMISSION_ID)).toBe(true);
   });
 });

@@ -21,7 +21,7 @@ export async function lookUpForm(c: Context<AppEnv>): Promise<FormLookup> {
   try {
     form = await getForm(c.env, clientId, formId);
   } catch (err) {
-    logger.error("couldn't load form", { requestId: c.get("requestId"), clientId, formId, errorMessage: String(err) });
+    logger.error("couldn't load form", { clientId, formId, errorMessage: String(err) });
     return { ok: false, response: errorResponse(c, 503, ErrorCode.SERVICE_UNAVAILABLE, "Service unavailable") };
   }
   if (!form) return { ok: false, response: notFoundResponse(c, "Form not found") };

@@ -30,6 +30,8 @@ export type FormSnapshot = Pick<Form, "id" | "name" | "payloadSchema" | "integra
 
 export interface SubmissionParams {
   submissionId: string;
+  /** The accepting request's trace, so the run logs under it (SOL-46). A replay would start a new one. */
+  traceId?: string;
   clientId: string;
   receivedAt: string;
   form: FormSnapshot;
