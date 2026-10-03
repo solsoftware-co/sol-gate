@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/solsoftware-co/sol-gate/compare/v1.3.0...v1.3.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* keep trace and submission ids inside workflow steps (SOL-46) ([115b389](https://github.com/solsoftware-co/sol-gate/commit/115b3890990f7e34e613d827aae50c64f732bbec))
+
 # [1.3.0](https://github.com/solsoftware-co/sol-gate/compare/v1.2.1...v1.3.0) (2026-10-03)
 
 
