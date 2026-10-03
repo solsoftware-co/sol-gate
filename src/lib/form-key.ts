@@ -15,11 +15,10 @@ export type FormKeyCheck = { ok: true; keyId: string } | { ok: false; response: 
 
 export async function checkFormKey(c: Context<AppEnv>): Promise<FormKeyCheck> {
   const { clientId, formId } = c.req.param() as { clientId: string; formId: string };
-  const requestId = c.get("requestId");
   const key = c.req.header("X-API-Key");
 
   const reject = (reason: string) => {
-    logger.warn("rejected submission: invalid form key", { requestId, clientId, formId, reason });
+    logger.warn("rejected submission: invalid form key", { clientId, formId, reason });
     return { ok: false as const, response: errorResponse(c, 401, ErrorCode.UNAUTHORIZED, "Unauthorized") };
   };
 
@@ -32,7 +31,7 @@ export async function checkFormKey(c: Context<AppEnv>): Promise<FormKeyCheck> {
     verification = await verifyFormApiKey(c.env, clientId, formId, key);
   } catch (err) {
     // sol-api unreachable is our problem, not the caller's: 503, not 401.
-    logger.error("couldn't verify form key", { requestId, clientId, formId, errorMessage: String(err) });
+    logger.error("couldn't verify form key", { clientId, formId, errorMessage: String(err) });
     return { ok: false, response: errorResponse(c, 503, ErrorCode.SERVICE_UNAVAILABLE, "Service unavailable") };
   }
 

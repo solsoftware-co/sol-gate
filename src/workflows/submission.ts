@@ -1,5 +1,6 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig } from "cloudflare:workers";
 import { processSubmission, type Step, type SubmissionParams, type SubmissionSummary } from "../services/process-submission.js";
+import { withLogScope } from "../lib/log-context.js";
 import type { Env } from "../types/index.js";
 
 // One instance per accepted submission; the instance id is the
@@ -15,6 +16,12 @@ export class SubmissionWorkflow extends WorkflowEntrypoint<Env, SubmissionParams
       do: <T>(name: string, config: WorkflowStepConfig, callback: () => Promise<T>) =>
         step.do(name, config, callback as never) as Promise<T>,
     };
-    return processSubmission(this.env, event.payload as SubmissionParams, adapter);
+    const params = event.payload as SubmissionParams;
+    // A run happens outside the request that created it, so it sets its own
+    // log scope: the same environment, trace and submission.
+    const scope = { environment: this.env.ENVIRONMENT, traceId: params.traceId, submissionId: params.submissionId };
+    return withLogScope(scope, () =>
+      processSubmission(this.env, params, adapter)
+    );
   }
 }

@@ -27,6 +27,7 @@ X-API-Key: sgk_…   (a key of this form, created in sol-api)
 { "fields": { "firstName": "Jane", "email": "jane@example.com", … } }
 
 → 202 { "success": true, "data": { "submissionId": "<uuid>" } }
+   X-Submission-Id: <the same uuid>   X-Trace-Id: <another uuid>   (on every response, including 4xx/5xx)
 ```
 
 Checked in this order:
@@ -106,6 +107,7 @@ src/
 │   ├── form-lookup.ts             # lookUpForm(): rate limit → load form
 │   ├── rate-limit.ts              # isRateLimited(): per-form binding
 │   ├── payload-schema.ts          # JSON Schema validation, displayValue()
+│   ├── log-context.ts             # environment, traceId, submissionId on every log line; X-Trace-Id / X-Submission-Id
 │   ├── environment.ts, logger.ts, responses.ts
 ├── middleware/error.ts            # global error envelope
 └── types/index.ts                 # Env bindings, AppEnv, ErrorCode
@@ -118,6 +120,7 @@ tests/unit/                        # Workers pool; fixtures/form-01.ts is the Fo
 - A plain `fetch()` between Workers on the same `workers.dev` subdomain fails with `error code: 1042` — always go through the bindings.
 - Rate limiting is per Cloudflare location and eventually consistent: a cap on abuse, not an exact quota. `period` must be 10 or 60.
 - Workflow params and step outputs hold the submission (PII) for the instance's retention period. Instance retention isn't set explicitly yet.
+- **Tracing (SOL-46):** Sol Gate starts every trace: each request gets a new `traceId`, and a submission gets its `submissionId` as soon as it arrives (before the key check, so a rejected one can be traced too). Both are returned as `X-Trace-Id` / `X-Submission-Id` on every response, and a caller's own headers are ignored. They are different values; the workflow instance id is the `submissionId`, and the run logs under the accepting request's `traceId` (passed in its params). `lib/log-context.ts` (AsyncLocalStorage) adds `environment`, `traceId` and `submissionId` to **every** log line, in the request and the workflow run, and `serviceFetch()` forwards both ids. There is no `requestId`: Cloudflare's own `$metadata.requestId` tells invocations apart. `traceId` is one run of work (on every line); `submissionId` is the form submission it's for (only when there is one). A replayed submission would keep its `submissionId` under a new `traceId`. Filter Workers Logs by `submissionId = <id>` for everything that happened to a submission, `traceId = <id>` for one run, or `environment = production`.
 - Logs never carry field values — only IDs, counts and outcomes. The logger redacts any field whose **name** contains `key`, `token`, `secret`… — so the matched form key's id is logged as `credentialId`, not `keyId`.
 
 ## Related
