@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { processSubmission, type Step, type SubmissionParams } from "../../../src/services/process-submission.js";
-import { withLogScope } from "../../../src/lib/log-context.js";
+import { processSubmission, stepInLogScope, type Step, type SubmissionParams } from "../../../src/services/process-submission.js";
+import { withLogScope, currentLogScope } from "../../../src/lib/log-context.js";
 import {
   CLIENT_ID,
   FORM_ID,
@@ -359,5 +359,34 @@ describe("processSubmission — trace and submission ids (SOL-46)", () => {
     const allCalls = [...solIntegrate.calls, ...solApi.calls, ...solNotify.calls];
     expect(allCalls.length).toBeGreaterThan(0);
     expect(allCalls.every((c) => c.traceIdHeader === "trace-1" && c.submissionIdHeader === SUBMISSION_ID)).toBe(true);
+  });
+});
+
+describe("stepInLogScope", () => {
+  // Like Workflows: the step keeps its callback and runs it later, in a fresh
+  // async context, rather than inline inside whatever scope called step.do().
+  function detachedStep() {
+    const callbacks: (() => Promise<unknown>)[] = [];
+    const step: Step = {
+      do: async <T>(_name: string, _config: unknown, callback: () => Promise<T>) => {
+        callbacks.push(callback);
+        return undefined as T;
+      },
+    };
+    return { step, runLater: () => callbacks[0]() };
+  }
+
+  const scope = { environment: "staging", traceId: "trace-1", submissionId: "sub-1" };
+
+  it("loses the run's scope inside a step that runs its callback later — the bug it fixes", async () => {
+    const { step, runLater } = detachedStep();
+    await withLogScope(scope, () => step.do("x", {}, async () => currentLogScope()));
+    expect(await runLater()).toEqual({});
+  });
+
+  it("runs every step callback inside the run's scope", async () => {
+    const { step, runLater } = detachedStep();
+    await withLogScope(scope, () => stepInLogScope(step, scope).do("x", {}, async () => currentLogScope()));
+    expect(await runLater()).toEqual(scope);
   });
 });
