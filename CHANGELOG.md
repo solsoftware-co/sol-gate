@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/solsoftware-co/sol-gate/compare/v1.2.1...v1.3.0) (2026-10-03)
+
+
+### Features
+
+* trace and submission ids on every log line (SOL-46) ([b626860](https://github.com/solsoftware-co/sol-gate/commit/b6268600522a6cc4bb55b8c057dd1e3e73d7885a))
+
 ## [1.2.1](https://github.com/solsoftware-co/sol-gate/compare/v1.2.0...v1.2.1) (2026-10-02)
 
 
