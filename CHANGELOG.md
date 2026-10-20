@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/solsoftware-co/sol-gate/compare/v1.3.1...v1.4.0) (2026-10-20)
+
+
+### Features
+
+* map Google Sheets submissions for sol-integrate (SOL-10) ([512e489](https://github.com/solsoftware-co/sol-gate/commit/512e489bdb152007ad5288f2da115262e9b51c6e))
+
 ## [1.3.1](https://github.com/solsoftware-co/sol-gate/compare/v1.3.0...v1.3.1) (2026-10-03)
 
 
