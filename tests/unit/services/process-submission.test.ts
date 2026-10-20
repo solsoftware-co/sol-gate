@@ -66,6 +66,8 @@ const fail = (status: number, message: string) =>
   Response.json({ success: false, error: { code: "X", message } }, { status });
 
 const SUBMISSION_ID = "sub-0001";
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/leads/edit";
+const integrateCallFor = (type: string) => solIntegrate.calls.find((c) => c.body.type === type);
 const params: SubmissionParams = {
   submissionId: SUBMISSION_ID,
   clientId: CLIENT_ID,
@@ -93,8 +95,10 @@ const notificationFor = (channelId: string) => solNotify.calls.find((c) => c.bod
 
 beforeEach(() => {
   solApi = fakeService(() => ok(form01Channels));
-  solIntegrate = fakeService(() =>
-    ok({ outcome: "succeeded", url: "https://us21.admin.mailchimp.com/lists/members/view?id=7", memberId: "m-1" })
+  solIntegrate = fakeService((_path, body) =>
+    (body as { type?: string }).type === "google_sheets"
+      ? ok({ outcome: "succeeded", url: SHEET_URL, range: "Leads!A2:G2" })
+      : ok({ outcome: "succeeded", url: "https://us21.admin.mailchimp.com/lists/members/view?id=7", memberId: "m-1" })
   );
   solNotify = fakeService(() => ok({ accepted: true }, 202));
 });
@@ -104,8 +108,8 @@ describe("processSubmission — Form 01", () => {
     const { step } = fakeStep();
     await processSubmission(env(), params, step);
 
-    expect(solIntegrate.calls).toHaveLength(1);
-    expect(solIntegrate.calls[0]).toEqual({
+    expect(solIntegrate.calls).toHaveLength(2);
+    expect(integrateCallFor("mailchimp")).toEqual({
       path: "/",
       apiKey: "integrate-key",
       traceIdHeader: null, // run outside a log scope here; see the SOL-46 tests below
@@ -117,6 +121,19 @@ describe("processSubmission — Form 01", () => {
         fields: { email: "jane@example.com", mergeFields: { FNAME: "Jane", LNAME: "Doe" } },
         context: { formId: FORM_ID, submissionId: SUBMISSION_ID },
       },
+    });
+  });
+
+  it("runs the Google Sheets write with values keyed by column (SOL-10)", async () => {
+    const { step } = fakeStep();
+    await processSubmission(env(), params, step);
+
+    expect(integrateCallFor("google_sheets")?.body).toEqual({
+      clientId: CLIENT_ID,
+      type: "google_sheets",
+      integrationId: LEADS_SHEET_ID,
+      fields: { values: submission },
+      context: { formId: FORM_ID, submissionId: SUBMISSION_ID },
     });
   });
 
@@ -160,7 +177,7 @@ describe("processSubmission — Form 01", () => {
     expect(request.fields.submission).toEqual(submission);
     expect(request.fields.integrations).toEqual([
       { name: "Newsletter", typeLabel: "Mailchimp", outcome: "succeeded", url: "https://us21.admin.mailchimp.com/lists/members/view?id=7" },
-      { name: "Leads sheet", typeLabel: "Google Sheets", outcome: "skipped", detail: "Google Sheets isn't supported yet" },
+      { name: "Leads sheet", typeLabel: "Google Sheets", outcome: "succeeded", url: SHEET_URL },
     ]);
   });
 
@@ -193,6 +210,7 @@ describe("processSubmission — Form 01", () => {
     expect([...names].sort()).toEqual(
       [
         `integration ${NEWSLETTER_ID}`,
+        `integration ${LEADS_SHEET_ID}`,
         "resolve channels",
         `notify ${GROUP_01_ID}`,
         `notify ${GROUP_02_ID}`,
@@ -209,7 +227,7 @@ describe("processSubmission — Form 01", () => {
       submissionId: SUBMISSION_ID,
       integrations: [
         { integrationId: NEWSLETTER_ID, outcome: "succeeded" },
-        { integrationId: LEADS_SHEET_ID, outcome: "skipped" },
+        { integrationId: LEADS_SHEET_ID, outcome: "succeeded" },
       ],
       notifications: [
         { channelId: GROUP_01_ID, status: "sent" },
@@ -310,7 +328,7 @@ describe("processSubmission — failures", () => {
 
     const summary = await processSubmission(env(), { ...params, fields: noEmail }, step);
 
-    expect(solIntegrate.calls).toHaveLength(0);
+    expect(integrateCallFor("mailchimp")).toBeUndefined();
     expect(summary.integrations[0]).toEqual({ integrationId: NEWSLETTER_ID, outcome: "skipped" });
   });
 
@@ -319,7 +337,7 @@ describe("processSubmission — failures", () => {
 
     await processSubmission(env(), { ...params, form: { ...form01, channels: [] } }, step);
 
-    expect(names).toEqual([`integration ${NEWSLETTER_ID}`]);
+    expect([...names].sort()).toEqual([`integration ${NEWSLETTER_ID}`, `integration ${LEADS_SHEET_ID}`].sort());
     expect(solApi.calls).toHaveLength(0);
   });
 });

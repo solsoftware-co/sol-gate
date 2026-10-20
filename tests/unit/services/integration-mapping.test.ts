@@ -47,13 +47,56 @@ describe("mapIntegrationFields — mailchimp", () => {
   });
 });
 
-describe("mapIntegrationFields — other types", () => {
-  it("skips Google Sheets until sol-integrate supports it (SOL-10)", () => {
+const sheet = (fieldMapping: Record<string, unknown>): FormIntegration => ({
+  integrationId: "i-2",
+  type: "google_sheets",
+  name: "Leads sheet",
+  status: "active",
+  fieldMapping,
+});
+
+describe("mapIntegrationFields — google_sheets", () => {
+  it("maps Form 01's Leads sheet mapping, keyed by column", () => {
     expect(mapIntegrationFields(form01.integrations[1], submission)).toEqual({
-      ok: false,
-      result: { outcome: "skipped", detail: "Google Sheets isn't supported yet" },
+      ok: true,
+      fields: {
+        values: {
+          firstName: "Jane",
+          lastName: "Doe",
+          email: "jane@example.com",
+          interestedIn: "Websites",
+          budget: "$5-10k",
+          comment: "Looking for a quote",
+        },
+      },
     });
   });
+
+  it("maps column keys that differ from the form's field names", () => {
+    const result = mapIntegrationFields(sheet({ columns: { submitterName: "firstName", submitterEmail: "email" } }), {
+      firstName: "Jane",
+      email: "jane@example.com",
+    });
+    expect(result).toEqual({ ok: true, fields: { values: { submitterName: "Jane", submitterEmail: "jane@example.com" } } });
+  });
+
+  it("leaves out empty or missing fields, and joins lists for display", () => {
+    const result = mapIntegrationFields(sheet({ columns: ["firstName", "phone", "interests"] }), {
+      firstName: "  ",
+      interests: ["design", "seo"],
+    });
+    expect(result).toEqual({ ok: true, fields: { values: { interests: "design, seo" } } });
+  });
+
+  it.each([[{}], [{ columns: [] }], [{ columns: {} }], [{ columns: "email" }]])("skips an invalid mapping %j", (fieldMapping) => {
+    expect(mapIntegrationFields(sheet(fieldMapping), submission)).toEqual({
+      ok: false,
+      result: { outcome: "skipped", detail: "The form's Google Sheets field mapping is invalid" },
+    });
+  });
+});
+
+describe("mapIntegrationFields — other types", () => {
 
   it("skips an unknown type", () => {
     const result = mapIntegrationFields({ ...mailchimp({}), type: "hubspot" }, submission);

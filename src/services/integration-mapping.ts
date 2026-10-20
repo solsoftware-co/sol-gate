@@ -53,14 +53,46 @@ function mapMailchimp(fieldMapping: unknown, fields: Record<string, unknown>): M
   };
 }
 
+// Google Sheets: the integration's own column_mapping (in sol-api) decides
+// the sheet's columns and their order, so this only says which form field
+// fills which column key. Either a list of form fields whose names are the
+// column keys — { "columns": ["firstName", "email"] } — or, when a shared
+// sheet's column keys differ from this form's field names, an object of
+// column key → form field: { "columns": { "submitterEmail": "email" } }.
+// sol-integrate fills the reserved `_timestamp` / `_submissionId` columns
+// itself. Empty or missing fields are left out; their cells stay blank.
+const googleSheetsMappingSchema = z.object({
+  columns: z.union([
+    z.array(z.string().min(1)).min(1),
+    z.record(z.string().min(1), z.string().min(1)).refine((m) => Object.keys(m).length > 0),
+  ]),
+});
+
+function mapGoogleSheets(fieldMapping: unknown, fields: Record<string, unknown>): MappingResult {
+  const mapping = googleSheetsMappingSchema.safeParse(fieldMapping);
+  if (!mapping.success) {
+    return { ok: false, result: { outcome: "skipped", detail: "The form's Google Sheets field mapping is invalid" } };
+  }
+
+  const columns = Array.isArray(mapping.data.columns)
+    ? mapping.data.columns.map((field) => [field, field] as const)
+    : Object.entries(mapping.data.columns);
+
+  const values: Record<string, string> = {};
+  for (const [column, field] of columns) {
+    const value = displayValue(fields[field])?.trim();
+    if (value) values[column] = value;
+  }
+
+  return { ok: true, fields: { values } };
+}
+
 export function mapIntegrationFields(integration: FormIntegration, fields: Record<string, unknown>): MappingResult {
   switch (integration.type) {
     case "mailchimp":
       return mapMailchimp(integration.fieldMapping, fields);
-    // TODO(SOL-10): sol-integrate has no Google Sheets branch yet. Map
-    // { "columns": [...] } into its row shape once that contract exists.
     case "google_sheets":
-      return { ok: false, result: { outcome: "skipped", detail: "Google Sheets isn't supported yet" } };
+      return mapGoogleSheets(integration.fieldMapping, fields);
     default:
       return { ok: false, result: { outcome: "skipped", detail: `Unsupported integration type: ${integration.type}` } };
   }
